@@ -22,8 +22,11 @@ embeddings_model = OllamaEmbeddings(model="qwen3-embedding:4b")
 
 llm = init_chat_model(model="qwen3.5:9b", temperature=0.2, model_provider="ollama")
 ollama_instance = ProductionAgent(llm=llm)
+
+#chroma_path = "RAG_utils/langchain_kb"
+chroma_path = "RAG_utils/mineru/mineru_rag_chroma"
 vectordb = Chroma(
-    persist_directory="RAG_utils/langchain_kb", embedding_function=embeddings_model
+    persist_directory=chroma_path, embedding_function=embeddings_model
 )
 
 app.add_middleware(

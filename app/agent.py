@@ -304,7 +304,6 @@ class ProductionAgent:
         workflow = StateGraph(RAGState)
 
         # Add nodes
-        workflow.add_node("classify_intent", self.classify_intent)
         workflow.add_node("retrieve", self.retrieve_documents)
         workflow.add_node("grade", self.grade_documents)
         workflow.add_node("rewrite", self.rewrite_query)

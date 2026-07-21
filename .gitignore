@@ -1,4 +1,5 @@
 langchain_kb
 .vscode
 __pycache__
-*.ipynb
+demo.ipynb
+mineru
