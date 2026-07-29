@@ -1,0 +1,12 @@
+__pycache__
+.vscode
+.conda
+.env
+RAG_utils/langchain_kb
+RAG_utils/pdfs
+RAG_utils/*.py
+.git 
+.gitignore
+*.ipynb
+*.md
+docker-compose.yml

@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 
@@ -18,9 +19,14 @@ from fastapi.middleware.cors import CORSMiddleware
 cache = ResponseCache(ttl_seconds=3000)
 print(cache.stats)
 app = FastAPI(title="Agent API")
-embeddings_model = OllamaEmbeddings(model="qwen3-embedding:4b")
 
-llm = init_chat_model(model="qwen3.5:9b", temperature=0.2, model_provider="ollama")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+DOCKER_MODE  = os.getenv("DOCKER_MODE", False)
+print(DOCKER_MODE)
+
+embeddings_model = OllamaEmbeddings(model="qwen3-embedding:4b", base_url=OLLAMA_BASE_URL)
+llm = init_chat_model(model="qwen3.5:9b", temperature=0.2, model_provider="ollama", base_url=OLLAMA_BASE_URL)
+
 ollama_instance = ProductionAgent(llm=llm)
 
 #chroma_path = "RAG_utils/langchain_kb"
@@ -70,9 +76,8 @@ async def chat(request: Request, body: ChatRequest):
     
     #ollama_app = build_agentic_rag_graph()
 
-    
     result = ollama_instance.build_agentic_rag_graph().invoke(initial_state)
-    
+   
 
     response_text = result["generation"]
 
@@ -91,4 +96,4 @@ async def chat(request: Request, body: ChatRequest):
     )
 
 
-uvicorn.run(app, host="0.0.0.0", port=5000)
+uvicorn.run(app, host="0.0.0.0", port=5000 if DOCKER_MODE else 4000)
