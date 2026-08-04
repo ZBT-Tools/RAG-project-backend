@@ -10,7 +10,7 @@ from langchain_ollama import OllamaEmbeddings
 from langsmith import traceable
 import uvicorn
 from langchain.chat_models import init_chat_model
-from app.agent import ProductionAgent
+from app.langchain_agent import LangchainAgent
 from app.cache import ResponseCache
 from app.models import ChatRequest, ChatResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +27,7 @@ print(DOCKER_MODE)
 embeddings_model = OllamaEmbeddings(model="qwen3-embedding:4b", base_url=OLLAMA_BASE_URL)
 llm = init_chat_model(model="qwen3.5:9b", temperature=0.2, model_provider="ollama", base_url=OLLAMA_BASE_URL)
 
-ollama_instance = ProductionAgent(llm=llm)
+ollama_instance = LangchainAgent(llm=llm)
 
 #chroma_path = "RAG_utils/langchain_kb"
 chroma_path = "RAG_utils/mineru/mineru_rag_chroma"
@@ -95,5 +95,5 @@ async def chat(request: Request, body: ChatRequest):
         processing_time_ms=round(((end - start) * 1000), 2),
     )
 
-
-uvicorn.run(app, host="0.0.0.0", port=5000 if DOCKER_MODE else 4000)
+#uvicorn.run(app, host="0.0.0.0", port=5000 if DOCKER_MODE else 4000)
+uvicorn.run(app, host="0.0.0.0", port=5000)

@@ -37,7 +37,7 @@ class RAGState(TypedDict):
     retry_count: int
     max_retries: int
     vectordb: Chroma
-    
+    intent: str
     selected_headings: list[str]
 
 
@@ -54,12 +54,33 @@ class HeadingSelectionSchema(BaseModel):
     )
 
 
-class ProductionAgent:
+class LangchainAgent:
     def __init__(self, llm):
         print("Init")
         self.llm = llm
 
-    def retrieve_documents(self, state: RAGState):
+    def classify_intent(self, state: RAGState):
+        print("\n [CLASSIFY] Determining query intent")
+        query = state.get("rewritten_query") or state["query"]
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert query classifier. Please reply whether the following query is 'local' or 'global'. Output only the word. Nothing else!",
+                ),
+                ("human", "Query {query}"),
+            ]
+        )
+
+        chain = prompt | self.llm
+        result = chain.invoke({"query": query})
+        print("INTENT ", result.content.strip())
+        return {"intent":result.content.strip()}
+
+    def retrieve_local(self, state: RAGState):
+        print("LOCAL SEARCH")
+
         vectordb = state.get("vectordb")
         retriever = vectordb.as_retriever(search_kwargs={"k": 3})
         query = state.get("rewritten_query") or state["query"]
@@ -68,6 +89,41 @@ class ProductionAgent:
 
         return {"documents": documents}
 
+    def retrieve_global(self, state: RAGState):
+        print("GLOBAL Search. Getting all available headings")
+        
+        vectordb = state.get("vectordb") 
+
+        # get all unique headings
+        retrieved_data = vectordb.get()
+        headings = list(dict.fromkeys(d.get("heading") for d in retrieved_data.get("metadatas", []) if d.get("heading")))
+        
+        query = state.get("rewritten_query") or state["query"]
+        
+        prompt = ChatPromptTemplate([
+           ( "system", "You map user queries to relevant section headings of a scientific paper. These are the headings that are available to you: {headings}. Reply with the relevant headings only!"),
+           ("human", "Query: {query}")
+        ])
+
+        chain = prompt | self.llm.with_structured_output(HeadingSelectionSchema)
+        agent_result = chain.invoke({"query":query, "headings": headings })
+        print("SELECTED HEADINGS: ", agent_result.headings)
+        documents = []
+
+        if headings : 
+            
+            documents = vectordb.similarity_search(query, k=10,
+                                                   filter={"heading" : {"$in": headings}})
+
+        print(documents)
+        return {"documents": documents, "selected_headings": headings}
+
+    def route_query_intent(self, state: RAGState): 
+        if state.get("intent") == "global":
+            return "retrieve_global"
+
+        return "retrieve_local"
+    
     def grade_documents(self, state: RAGState) -> dict:
         """
         Grade retrieved documents for relevance to the query.
@@ -139,10 +195,9 @@ class ProductionAgent:
         """
         query = state["query"]
         retry_count = state.get("retry_count", 0)
-      
+
         print(f"\n[REWRITE] Attempt {retry_count + 1}: Improving query...")
 
-      
         rewrite_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -304,21 +359,33 @@ class ProductionAgent:
         workflow = StateGraph(RAGState)
 
         # Add nodes
-        workflow.add_node("retrieve", self.retrieve_documents)
+        workflow.add_node("classify_intent", self.classify_intent)
+        workflow.add_node("retrieve_local", self.retrieve_local)
+        workflow.add_node("retrieve_global", self. retrieve_global)
         workflow.add_node("grade", self.grade_documents)
         workflow.add_node("rewrite", self.rewrite_query)
         workflow.add_node("generate", self.generate_answer)
         workflow.add_node("fallback", self.generate_fallback)
 
         # Set entry point
+        workflow.set_entry_point("retrieve_local")
         #workflow.set_entry_point("classify_intent")
-        workflow.set_entry_point("retrieve")
         # Add edges
-        workflow.add_edge(START, "retrieve")
-        #workflow.add_edge("classify_intent", "retrieve")
-        #workflow.add_edge("select_headings", "retrieve")
-        workflow.add_edge("retrieve", "grade")
+        #workflow.add_edge(START, "retrieve")
+        
+        # workflow.add_edge("classify_intent", "retrieve")
+        # workflow.add_edge("select_headings", "retrieve")
+        #workflow.add_edge("retrieve", "grade")
 
+        # workflow.add_conditional_edges("classify_intent", self.route_query_intent, {
+        #     "retrieve_local": "retrieve_local",
+        #     "retrieve_global": "retrieve_global"
+        # })
+
+        workflow.add_edge("retrieve_local", "grade")
+        # workflow.add_edge("retrieve_global", "grade")
+
+        
         # Conditional edge from grade
         workflow.add_conditional_edges(
             "grade",
@@ -327,7 +394,7 @@ class ProductionAgent:
         )
 
         # After rewrite, go back to retrieve
-        workflow.add_edge("rewrite", "retrieve")
+        workflow.add_edge("rewrite", "classify_intent")
 
         # Terminal nodes
         workflow.add_edge("generate", END)
